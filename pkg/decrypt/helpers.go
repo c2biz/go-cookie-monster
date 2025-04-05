@@ -1,9 +1,11 @@
 package decrypt
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/json"
+	"fmt"
 )
 
 func decryptAESGCM(key []byte, encryptedData []byte) ([]byte, error) {
@@ -54,10 +56,88 @@ func setDefaultValues(c *Cookie) {
 	c.StoreID = nil
 }
 
+// In pkg/decrypt/helpers.go
 func (f *JSONFormatter) Format() (string, error) {
-	jsonData, err := json.MarshalIndent(f.Cookies, "", "    ")
+	if len(f.Cookies) > 0 {
+		jsonData, err := json.MarshalIndent(f.Cookies, "", "    ")
+		if err != nil {
+			return "", err
+		}
+		return string(jsonData), nil
+	}
+
+	// Otherwise format login entries
+	jsonData, err := json.MarshalIndent(f.LogonEntries, "", "    ")
 	if err != nil {
 		return "", err
 	}
 	return string(jsonData), nil
+}
+
+// Add this to pkg/decrypt/helpers.go
+
+// decryptLogonData handles decryption of Chrome login data passwords
+func decryptLogonData(key []byte, encryptedData []byte) ([]byte, error) {
+	// Check for v10 prefix
+	if len(encryptedData) >= 3 && bytes.Equal(encryptedData[:3], []byte("v10")) {
+		// Remove the v10 prefix
+		encryptedData = encryptedData[3:]
+
+		// Not enough data for nonce
+		if len(encryptedData) < 12 {
+			return nil, fmt.Errorf("encrypted data too short for nonce")
+		}
+
+		nonce := encryptedData[:12]
+		ciphertext := encryptedData[12:]
+
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, err
+		}
+
+		aesGCM, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, err
+		}
+
+		plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// If plaintext is longer than 32 bytes, remove the padding
+		if len(plaintext) > 32 {
+			return plaintext[32:], nil
+		}
+		return plaintext, nil
+	}
+
+	// No recognizable prefix, try direct decryption
+	if len(encryptedData) < 12 {
+		return nil, fmt.Errorf("encrypted data too short for direct decryption")
+	}
+
+	nonce := encryptedData[:12]
+	ciphertext := encryptedData[12:]
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(plaintext) > 32 {
+		return plaintext[32:], nil
+	}
+	return plaintext, nil
 }

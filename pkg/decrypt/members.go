@@ -27,5 +27,18 @@ type CookieExtractor struct {
 }
 
 type JSONFormatter struct {
-	Cookies []Cookie
+	Cookies      []Cookie
+	LogonEntries []LogonData
+}
+
+// Define the LogonData struct similar to Cookie
+type LogonData struct {
+	OriginURL string `json:"origin_url"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+}
+
+// Define LogonDataExtractor similar to CookieExtractor
+type LogonDataExtractor struct {
+	Rows *sql.Rows
 }
