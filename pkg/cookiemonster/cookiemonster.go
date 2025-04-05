@@ -36,7 +36,7 @@ func ModeExecute() {
 		case "cookies":
 			ProcessCookiesMode(key, databasePath, nil)
 		case "logindata":
-			fmt.Println("Login Data")
+			ProcessLogonDataMode(key, databasePath, nil)
 		case "all":
 			fmt.Println("All")
 
@@ -57,4 +57,5 @@ func ExecuteAllModes(localStateFilePath, browserName, outputDir string) {
 	browserFiles := ProcessFileMode(browserName, outputDir, false)
 
 	ProcessCookiesMode(key, "", browserFiles.Cookies.Data)
+	ProcessLogonDataMode(key, "", browserFiles.LoginData.Data)
 }

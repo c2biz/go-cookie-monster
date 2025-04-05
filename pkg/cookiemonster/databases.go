@@ -115,3 +115,94 @@ func parseKey(keyStr string) ([]byte, error) {
 	}
 	return []byte(keyStr), nil
 }
+
+// ProcessLogonDataMode processes Chrome login data
+func ProcessLogonDataMode(key, databasePath string, databaseBytes []byte) {
+	var (
+		reader    *decrypt.DBReader
+		err       error
+		tempDbUse bool
+	)
+
+	fmt.Printf("\n[*] Attempting to decrypt login data...\n")
+
+	// ensure we have a key
+	if key == "" {
+		log.Fatalf("key is required for logon data mode")
+	}
+
+	// parse the key
+	keyBytes, err := parseKey(key)
+	if err != nil {
+		log.Fatalf("error parsing key: %v", err)
+	}
+
+	// ensure we have a database path or bytes
+	if databasePath == "" && len(databaseBytes) == 0 {
+		log.Fatalf("database path is required for logon data mode")
+	}
+
+	// no database path but bytes, write the bytes to a temp file
+	if databasePath == "" && databaseBytes != nil {
+		tmpFile, err := os.CreateTemp("", "")
+		if err != nil {
+			log.Fatalf("error creating temp file: %v", err)
+		}
+
+		if _, err := tmpFile.Write(databaseBytes); err != nil {
+			log.Fatalf("error writing to temp file: %v", err)
+		}
+		tmpFile.Close()
+		fmt.Println("[*] Wrote database bytes to temp file:", tmpFile.Name())
+
+		databasePath = tmpFile.Name()
+		tempDbUse = true
+	}
+
+	// read in the database file
+	reader, err = decrypt.NewDBReader(databasePath)
+	if err != nil {
+		log.Fatalf("error opening database: %v", err)
+	}
+
+	// query the logon data
+	rows, err := reader.QueryLogonData()
+	if err != nil {
+		log.Fatalf("error querying logon data: %v", err)
+	}
+
+	// extract the logon data
+	extractor := &decrypt.LogonDataExtractor{Rows: rows}
+	var logonEntries []decrypt.LogonData
+
+	for rows.Next() {
+		logonEntry, err := extractor.ExtractLogonData(keyBytes)
+		if err != nil {
+			log.Printf("error extracting logon data: %v", err)
+			continue
+		}
+		logonEntries = append(logonEntries, *logonEntry)
+	}
+
+	// Format and print the results
+	formatter := &decrypt.JSONFormatter{LogonEntries: logonEntries}
+	output, err := formatter.Format()
+	if err != nil {
+		log.Fatalf("error formatting logon data: %v", err)
+	}
+
+	fmt.Printf("[+] Decrypted %d login entries:\n", len(logonEntries))
+	fmt.Println(output)
+
+	// cleanup
+	rows.Close()
+	reader.Close()
+
+	// if we created a temp file, remove it
+	if tempDbUse {
+		err = os.Remove(databasePath)
+		if err != nil {
+			log.Printf("[warning] error removing temp database file: %v", err)
+		}
+	}
+}
